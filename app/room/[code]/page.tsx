@@ -95,7 +95,7 @@ export default function RoomPage() {
   }, [myPlayer, room, myVote]);
 
   const hostAction = async (action: string) => {
-    await fetch(`/api/room/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ roomId: room!.id }) });
+    await fetch(`/api/room/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ roomId: room!.id, userId }) });
   };
 
   if (loading) return <div className="min-h-screen bg-bg-base flex items-center justify-center"><motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: "linear" }} className="text-5xl">\uD83C\uDF19</motion.div></div>;

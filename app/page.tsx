@@ -1,9 +1,12 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { ROLES } from "@/types";
 import type { RoleName } from "@/types";
+import { createClient } from "@/lib/supabase/client";
+
+const supabase = createClient();
 
 const ROLE_PREVIEWS: { role: RoleName; quote: string }[] = [
   { role: "Loup-Garou", quote: "La nuit vous appartient. Chassez sans pitie." },
@@ -16,38 +19,90 @@ const ROLE_PREVIEWS: { role: RoleName; quote: string }[] = [
 
 export default function LandingPage() {
   const router = useRouter();
-  const [tab, setTab] = useState<"create" | "join">("create");
+  const [tab, setTab] = useState<"create" | "join" | "tester">("create");
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [hoveredRole, setHoveredRole] = useState<RoleName>("Loup-Garou");
+  const [userId, setUserId] = useState<string | null>(null);
+
+  // Get or create anonymous session on mount
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      const session = data.session;
+      if (session) {
+        setUserId(session.user.id);
+      } else {
+        supabase.auth.signInAnonymously().then((res) => {
+          setUserId(res.data.user?.id ?? null);
+        });
+      }
+    });
+  }, []);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return setError("Entrez votre nom");
+    if (!userId) return setError("Connexion en cours, veuillez patienter...");
     setLoading(true); setError("");
     try {
-      const res = await fetch("/api/room/create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }) });
+      const res = await fetch("/api/room/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), userId }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      router.push(`/room/${data.code}`);
-    } catch (err: unknown) { setError(err instanceof Error ? err.message : "Erreur inattendue"); }
-    finally { setLoading(false); }
+      router.push("/room/" + data.code);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Erreur inattendue");
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleJoin(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return setError("Entrez votre nom");
     if (!code.trim()) return setError("Entrez le code");
+    if (!userId) return setError("Connexion en cours, veuillez patienter...");
     setLoading(true); setError("");
     try {
-      const res = await fetch("/api/room/join", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim(), code: code.trim().toUpperCase() }) });
+      const res = await fetch("/api/room/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), code: code.trim().toUpperCase(), userId }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      router.push(`/room/${data.code}`);
-    } catch (err: unknown) { setError(err instanceof Error ? err.message : "Erreur inattendue"); }
-    finally { setLoading(false); }
+      router.push("/room/" + data.code);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Erreur inattendue");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleTester(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return setError("Entrez votre nom");
+    if (!userId) return setError("Connexion en cours, veuillez patienter...");
+    setLoading(true); setError("");
+    try {
+      const res = await fetch("/api/room/tester", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playerName: name.trim(), userId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      router.push("/room/" + data.code);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Erreur inattendue");
+    } finally {
+      setLoading(false);
+    }
   }
 
   const roleData = ROLES[hoveredRole];
@@ -71,38 +126,73 @@ export default function LandingPage() {
           </div>
           <p className="text-white/50 mt-6 text-sm md:text-base max-w-md mx-auto">4 a 12 joueurs · Aucun compte requis · Parties en temps reel</p>
         </motion.div>
+
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.5 }}
           className="glass rounded-2xl p-1 w-full max-w-md z-10 shadow-gold">
+          {/* Tabs */}
           <div className="flex rounded-xl overflow-hidden mb-1">
-            {(["create", "join"] as const).map((t) => (
+            {(["create", "join", "tester"] as const).map((t) => (
               <button key={t} onClick={() => { setTab(t); setError(""); }}
-                className={`flex-1 py-3 font-cinzel text-sm tracking-widest uppercase transition-all duration-300 ${tab === t ? "bg-gold text-bg-base font-semibold" : "text-white/50 hover:text-white/80"}`}>
-                {t === "create" ? "Creer" : "Rejoindre"}
+                className={"flex-1 py-3 font-cinzel text-xs tracking-widest uppercase transition-all duration-300 " + (tab === t
+                  ? (t === "tester" ? "bg-emerald-600/80 text-white font-semibold" : "bg-gold text-bg-base font-semibold")
+                  : "text-white/50 hover:text-white/80")}>
+                {t === "create" ? "Creer" : t === "join" ? "Rejoindre" : "🤖 Tester"}
               </button>
             ))}
           </div>
+
           <div className="p-5">
             <AnimatePresence mode="wait">
-              <motion.form key={tab} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                onSubmit={tab === "create" ? handleCreate : handleJoin} className="space-y-4">
-                <div>
-                  <label className="block text-white/60 text-xs font-cinzel tracking-widest uppercase mb-2">Votre Nom</label>
-                  <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex: Merlin, Isolde..." maxLength={20}
-                    className="w-full bg-bg-hover border border-bg-border rounded-xl px-4 py-3 text-white placeholder-white/25 focus:outline-none focus:border-gold/60 transition-all text-sm" />
-                </div>
-                {tab === "join" && (
-                  <div>
-                    <label className="block text-white/60 text-xs font-cinzel tracking-widest uppercase mb-2">Code de Salle</label>
-                    <input type="text" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="Ex: AB3X7K" maxLength={6}
-                      className="w-full bg-bg-hover border border-bg-border rounded-xl px-4 py-3 text-white placeholder-white/25 focus:outline-none focus:border-gold/60 transition-all text-sm tracking-[0.3em] font-cinzel text-center" />
+              {tab === "tester" ? (
+                <motion.div key="tester" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                  {/* Tester info card */}
+                  <div className="rounded-xl p-4 mb-4 border border-emerald-600/30 bg-emerald-900/20">
+                    <p className="font-cinzel text-emerald-400 text-xs tracking-widest uppercase mb-2">Mode Test</p>
+                    <p className="text-white/60 text-sm leading-relaxed">
+                      Rejoin une partie avec <strong className="text-white">7 bots</strong> (8 joueurs total).
+                      La partie démarre instantanément — testez tous les rôles et phases de jeu.
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {["2 Loups", "2 Villageois", "Voyante", "Sorcière", "Garde", "Vous"].map((r) => (
+                        <span key={r} className="text-xs px-2 py-0.5 rounded-full bg-white/10 text-white/50 font-cinzel">{r}</span>
+                      ))}
+                    </div>
                   </div>
-                )}
-                {error && <p className="text-wolves text-sm text-center">{error}</p>}
-                <button type="submit" disabled={loading}
-                  className={`w-full py-3.5 rounded-xl font-cinzel font-semibold tracking-widest uppercase text-sm transition-all duration-300 ${loading ? "bg-gold/30 text-white/40 cursor-not-allowed" : "bg-gold text-bg-base hover:bg-gold-light shadow-gold-sm active:scale-[0.98]"}`}>
-                  {loading ? "Chargement..." : tab === "create" ? "Creer une Partie" : "Rejoindre"}
-                </button>
-              </motion.form>
+                  <form onSubmit={handleTester} className="space-y-4">
+                    <div>
+                      <label className="block text-white/60 text-xs font-cinzel tracking-widest uppercase mb-2">Votre Nom</label>
+                      <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex: Merlin, Isolde..."
+                        maxLength={20} className="w-full bg-bg-hover border border-bg-border rounded-xl px-4 py-3 text-white placeholder-white/25 focus:outline-none focus:border-emerald-500/60 transition-all text-sm" />
+                    </div>
+                    {error && <p className="text-wolves text-sm text-center">{error}</p>}
+                    <button type="submit" disabled={loading}
+                      className={"w-full py-3.5 rounded-xl font-cinzel font-semibold tracking-widest uppercase text-sm transition-all duration-300 " + (loading ? "bg-emerald-800/30 text-white/40 cursor-not-allowed" : "bg-emerald-600 text-white hover:bg-emerald-500 shadow-lg active:scale-[0.98]")}>
+                      {loading ? "Creation..." : "Lancer une Partie Test"}
+                    </button>
+                  </form>
+                </motion.div>
+              ) : (
+                <motion.form key={tab} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                  onSubmit={tab === "create" ? handleCreate : handleJoin} className="space-y-4">
+                  <div>
+                    <label className="block text-white/60 text-xs font-cinzel tracking-widest uppercase mb-2">Votre Nom</label>
+                    <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex: Merlin, Isolde..." maxLength={20}
+                      className="w-full bg-bg-hover border border-bg-border rounded-xl px-4 py-3 text-white placeholder-white/25 focus:outline-none focus:border-gold/60 transition-all text-sm" />
+                  </div>
+                  {tab === "join" && (
+                    <div>
+                      <label className="block text-white/60 text-xs font-cinzel tracking-widest uppercase mb-2">Code de Salle</label>
+                      <input type="text" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="Ex: AB3X7K" maxLength={6}
+                        className="w-full bg-bg-hover border border-bg-border rounded-xl px-4 py-3 text-white placeholder-white/25 focus:outline-none focus:border-gold/60 transition-all text-sm tracking-[0.3em] font-cinzel text-center" />
+                    </div>
+                  )}
+                  {error && <p className="text-wolves text-sm text-center">{error}</p>}
+                  <button type="submit" disabled={loading}
+                    className={"w-full py-3.5 rounded-xl font-cinzel font-semibold tracking-widest uppercase text-sm transition-all duration-300 " + (loading ? "bg-gold/30 text-white/40 cursor-not-allowed" : "bg-gold text-bg-base hover:bg-gold-light shadow-gold-sm active:scale-[0.98]")}>
+                    {loading ? "Chargement..." : tab === "create" ? "Creer une Partie" : "Rejoindre"}
+                  </button>
+                </motion.form>
+              )}
             </AnimatePresence>
           </div>
         </motion.div>
@@ -120,11 +210,11 @@ export default function LandingPage() {
                 const r = ROLES[role]; const isActive = hoveredRole === role;
                 return (
                   <motion.button key={role} onMouseEnter={() => setHoveredRole(role)} onClick={() => setHoveredRole(role)}
-                    className={`glass rounded-2xl p-4 text-center transition-all duration-300 cursor-pointer ${isActive ? "scale-[1.03]" : "hover:scale-[1.02]"}`}
-                    style={isActive ? { borderColor: r.color, boxShadow: `0 0 20px ${r.color}40` } : {}}>
+                    className={"glass rounded-2xl p-4 text-center transition-all duration-300 cursor-pointer " + (isActive ? "scale-[1.03]" : "hover:scale-[1.02]")}
+                    style={isActive ? { borderColor: r.color, boxShadow: "0 0 20px " + r.color + "40" } : {}}>
                     <div className="text-3xl mb-2">{r.emoji}</div>
                     <div className="font-cinzel text-xs font-semibold" style={{ color: isActive ? r.color : "rgba(255,255,255,0.6)" }}>{role}</div>
-                    <div className={`mt-2 text-xs px-2 py-0.5 rounded-full font-cinzel ${r.team === "wolves" ? "bg-wolves/20 text-wolves" : "bg-villagers/20 text-villagers"}`}>
+                    <div className={"mt-2 text-xs px-2 py-0.5 rounded-full font-cinzel " + (r.team === "wolves" ? "bg-wolves/20 text-wolves" : "bg-villagers/20 text-villagers")}>
                       {r.team === "wolves" ? "Loups" : "Village"}
                     </div>
                   </motion.button>
@@ -133,21 +223,21 @@ export default function LandingPage() {
             </div>
             <AnimatePresence mode="wait">
               <motion.div key={hoveredRole} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
-                className="glass rounded-3xl p-8 relative overflow-hidden" style={{ borderColor: `${roleData.color}30` }}>
-                <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ background: `radial-gradient(ellipse at top left, ${roleData.color} 0%, transparent 60%)` }} />
+                className="glass rounded-3xl p-8 relative overflow-hidden" style={{ borderColor: roleData.color + "30" }}>
+                <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ background: "radial-gradient(ellipse at top left, " + roleData.color + " 0%, transparent 60%)" }} />
                 <div className="relative z-10">
                   <div className="flex items-center gap-4 mb-6">
                     <span className="text-6xl">{roleData.emoji}</span>
                     <div>
                       <h3 className="font-cinzel font-bold text-2xl" style={{ color: roleData.color }}>{hoveredRole}</h3>
-                      <span className={`text-xs font-cinzel px-3 py-1 rounded-full mt-1 inline-block ${roleData.team === "wolves" ? "bg-wolves/20 text-wolves" : "bg-villagers/20 text-villagers"}`}>
+                      <span className={"text-xs font-cinzel px-3 py-1 rounded-full mt-1 inline-block " + (roleData.team === "wolves" ? "bg-wolves/20 text-wolves" : "bg-villagers/20 text-villagers")}>
                         {roleData.team === "wolves" ? "Camp des Loups" : "Camp du Village"}
                       </span>
                     </div>
                   </div>
                   <p className="text-white/75 text-sm leading-relaxed mb-6">{roleData.description}</p>
-                  <div className="border-l-2 pl-4" style={{ borderColor: `${roleData.color}60` }}>
-                    <p className="font-cinzel text-sm italic" style={{ color: `${roleData.color}90` }}>
+                  <div className="border-l-2 pl-4" style={{ borderColor: roleData.color + "60" }}>
+                    <p className="font-cinzel text-sm italic" style={{ color: roleData.color + "90" }}>
                       &ldquo;{ROLE_PREVIEWS.find((r) => r.role === hoveredRole)?.quote}&rdquo;
                     </p>
                   </div>
