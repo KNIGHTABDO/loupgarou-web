@@ -45,7 +45,8 @@ export default function RoomPage() {
   const loversIds = room?.lovers as string[] | null;
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data }: { data: { session: import("@supabase/supabase-js").Session | null } }) => {
+      const session = data.session;
       if (session) setUserId(session.user.id);
       else supabase.auth.signInAnonymously().then(({ data }) => setUserId(data.user?.id ?? null));
     });
