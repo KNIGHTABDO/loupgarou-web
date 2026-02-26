@@ -8,11 +8,23 @@
 
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
-body { background-color: var(--bg-base); color: #e8e0d0; font-family: 'Inter', sans-serif; overflow-x: hidden; -webkit-font-smoothing: antialiased; }
+body {
+  background-color: var(--bg-base);
+  color: #e8e0d0;
+  font-family: 'Inter', sans-serif;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
 
-::-webkit-scrollbar { width: 6px; }
+/* Prevent iOS overscroll on modals */
+.modal-scroll {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: #0f0f1a; }
-::-webkit-scrollbar-thumb { background: #2a2a3e; border-radius: 3px; }
+::-webkit-scrollbar-thumb { background: #2a2a3e; border-radius: 2px; }
 ::-webkit-scrollbar-thumb:hover { background: #c9a84c40; }
 
 .text-gold-shimmer {
@@ -32,7 +44,7 @@ body { background-color: var(--bg-base); color: #e8e0d0; font-family: 'Inter', s
 }
 
 .glass-dark {
-  background: rgba(7, 7, 15, 0.85);
+  background: rgba(7, 7, 15, 0.88);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.06);
@@ -48,8 +60,8 @@ body { background-color: var(--bg-base); color: #e8e0d0; font-family: 'Inter', s
 
 .phase-badge {
   font-family: 'Cinzel', serif;
-  font-size: 0.65rem;
-  letter-spacing: 0.12em;
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
@@ -65,11 +77,19 @@ body { background-color: var(--bg-base); color: #e8e0d0; font-family: 'Inter', s
 
 @keyframes wolfPulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(220,38,38,0.4); }
-  70% { box-shadow: 0 0 0 12px rgba(220,38,38,0); }
+  70% { box-shadow: 0 0 0 10px rgba(220,38,38,0); }
 }
 .wolf-pulse { animation: wolfPulse 2s ease-in-out infinite; }
 
+@keyframes textShimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+@keyframes fadeIn { 0% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes fadeUp { 0% { opacity: 0; transform: translateY(16px); } 100% { opacity: 1; transform: translateY(0); } }
+@keyframes float { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-10px); } }
+
 @supports (padding: max(0px)) {
-  .safe-bottom { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
-  .safe-top { padding-top: max(1rem, env(safe-area-inset-top)); }
+  .safe-bottom { padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); }
+  .safe-top { padding-top: max(0.75rem, env(safe-area-inset-top)); }
 }

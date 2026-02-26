@@ -199,9 +199,9 @@ export default function LandingPage() {
         </motion.div>
       </section>
 
-      <section className="py-24 px-4">
+      <section className="py-12 sm:py-20 px-4">
         <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
+          <div className="text-center mb-8 sm:mb-12">
             <p className="font-cinzel text-gold/60 text-xs tracking-[0.3em] uppercase mb-3">8 Roles Uniques</p>
             <h2 className="font-cinzel font-bold text-3xl md:text-5xl text-white">Qui etes-vous ?</h2>
           </div>
@@ -211,9 +211,9 @@ export default function LandingPage() {
                 const r = ROLES[role]; const isActive = hoveredRole === role;
                 return (
                   <motion.button key={role} onMouseEnter={() => setHoveredRole(role)} onClick={() => setHoveredRole(role)}
-                    className={"glass rounded-2xl p-4 text-center transition-all duration-300 cursor-pointer " + (isActive ? "scale-[1.03]" : "hover:scale-[1.02]")}
+                    className={"glass rounded-xl p-3 text-center transition-all duration-300 cursor-pointer " + (isActive ? "scale-[1.03]" : "hover:scale-[1.02]")}
                     style={isActive ? { borderColor: r.color, boxShadow: "0 0 20px " + r.color + "40" } : {}}>
-                    <div className="text-3xl mb-2">{r.emoji}</div>
+                    <div className="text-2xl mb-1.5">{r.emoji}</div>
                     <div className="font-cinzel text-xs font-semibold" style={{ color: isActive ? r.color : "rgba(255,255,255,0.6)" }}>{role}</div>
                     <div className={"mt-2 text-xs px-2 py-0.5 rounded-full font-cinzel " + (r.team === "wolves" ? "bg-wolves/20 text-wolves" : "bg-villagers/20 text-villagers")}>
                       {r.team === "wolves" ? "Loups" : "Village"}
@@ -224,11 +224,11 @@ export default function LandingPage() {
             </div>
             <AnimatePresence mode="wait">
               <motion.div key={hoveredRole} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
-                className="glass rounded-3xl p-8 relative overflow-hidden" style={{ borderColor: roleData.color + "30" }}>
+                className="glass rounded-2xl p-4 sm:p-6 relative overflow-hidden" style={{ borderColor: roleData.color + "30" }}>
                 <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ background: "radial-gradient(ellipse at top left, " + roleData.color + " 0%, transparent 60%)" }} />
                 <div className="relative z-10">
                   <div className="flex items-center gap-4 mb-6">
-                    <span className="text-6xl">{roleData.emoji}</span>
+                    <span className="text-5xl">{roleData.emoji}</span>
                     <div>
                       <h3 className="font-cinzel font-bold text-2xl" style={{ color: roleData.color }}>{hoveredRole}</h3>
                       <span className={"text-xs font-cinzel px-3 py-1 rounded-full mt-1 inline-block " + (roleData.team === "wolves" ? "bg-wolves/20 text-wolves" : "bg-villagers/20 text-villagers")}>
@@ -249,13 +249,13 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section className="py-24 px-4 text-center relative overflow-hidden">
+      <section className="py-12 sm:py-20 px-4 text-center relative overflow-hidden">
         <div className="absolute inset-0 glow-wolves pointer-events-none" />
         <div className="relative z-10">
           <h2 className="font-cinzel font-black text-4xl md:text-6xl text-white mb-6">La Nuit <span className="text-gold-shimmer">Tombe</span></h2>
           <p className="text-white/50 mb-10 max-w-md mx-auto">Creez une salle en 10 secondes. Partagez le code. Jouez.</p>
           <button onClick={() => { setTab("create"); window.scrollTo({ top: 0, behavior: "smooth" }); }}
-            className="bg-gold hover:bg-gold-light text-bg-base font-cinzel font-bold text-lg px-12 py-5 rounded-2xl shadow-gold transition-all hover:scale-105 active:scale-95 tracking-widest uppercase">
+            className="bg-gold hover:bg-gold-light text-bg-base font-cinzel font-bold text-sm sm:text-base px-8 sm:px-12 py-3.5 sm:py-4 rounded-xl shadow-gold transition-all hover:scale-105 active:scale-95 tracking-widest uppercase">
             Commencer
           </button>
         </div>

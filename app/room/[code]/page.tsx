@@ -9,23 +9,54 @@ import { ROLES } from "@/types";
 
 const supabase = createClient();
 
-/* ─── helpers ─── */
-function cls(...c: (string | false | undefined | null)[]) { return c.filter(Boolean).join(" "); }
+function cls(...c: (string | false | undefined | null)[]) {
+  return c.filter(Boolean).join(" ");
+}
 
 function PhaseBar({ room }: { room: Room }) {
   const map: Record<string, { icon: string; label: string; color: string }> = {
-    lobby:        { icon: "🏠", label: "Salle",          color: "#c9a84c" },
-    role_reveal:  { icon: "🃏", label: "Rôles",          color: "#9b59b6" },
-    night:        { icon: "🌙", label: `Nuit ${room.night_number}`, color: "#6366f1" },
-    day_summary:  { icon: "🌅", label: "Aube",           color: "#f97316" },
-    day_vote:     { icon: "⚖️",  label: `Vote J${room.day_number}`, color: "#dc2626" },
-    ended:        { icon: "🏆", label: "Terminé",        color: "#c9a84c" },
+    lobby:       { icon: "🏠", label: "Salle",           color: "#c9a84c" },
+    role_reveal: { icon: "🃏", label: "Rôles",           color: "#9b59b6" },
+    night:       { icon: "🌙", label: `Nuit ${room.night_number}`, color: "#6366f1" },
+    day_summary: { icon: "🌅", label: "Aube",            color: "#f97316" },
+    day_vote:    { icon: "⚖️",  label: `Vote J${room.day_number}`, color: "#dc2626" },
+    ended:       { icon: "🏆", label: "Fin",             color: "#c9a84c" },
   };
   const p = map[room.status] ?? map.lobby;
   return (
-    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full font-cinzel text-xs"
-      style={{ background: `${p.color}20`, border: `1px solid ${p.color}40`, color: p.color }}>
-      <span>{p.icon}</span><span>{p.label}</span>
+    <div
+      className="flex items-center gap-1 px-2.5 py-1 rounded-full font-cinzel text-[10px] whitespace-nowrap"
+      style={{ background: `${p.color}20`, border: `1px solid ${p.color}40`, color: p.color }}
+    >
+      <span>{p.icon}</span>
+      <span className="hidden xs:inline">{p.label}</span>
+    </div>
+  );
+}
+
+/* ─── Cupidon 2-pick helper ─── */
+function CupidonPicker({ alive, onLink }: { alive: Player[]; onLink: (a: string, b: string) => void }) {
+  const [first, setFirst] = useState<string | null>(null);
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {alive.map((p) => (
+        <button
+          key={p.id}
+          onClick={() => {
+            if (!first) { setFirst(p.id); return; }
+            if (first === p.id) { setFirst(null); return; }
+            onLink(first, p.id);
+          }}
+          className={cls(
+            "glass rounded-xl p-3 text-center transition-all active:scale-95",
+            first === p.id ? "border-pink-500/70 scale-105" : "hover:scale-[1.02]"
+          )}
+          style={first === p.id ? { boxShadow: "0 0 12px rgba(236,72,153,0.3)" } : {}}
+        >
+          <div className="text-xl mb-1">{first === p.id ? "💗" : "💛"}</div>
+          <p className="font-cinzel text-xs text-white leading-tight">{p.name}</p>
+        </button>
+      ))}
     </div>
   );
 }
@@ -55,6 +86,11 @@ export default function RoomPage() {
   const isHost = room?.host_id === userId;
   const alive = players.filter((p) => p.is_alive);
   const dead = players.filter((p) => !p.is_alive);
+  const isMyNightTurn =
+    room?.status === "night" &&
+    room.current_phase_role === myPlayer?.role &&
+    !myNightAction &&
+    myPlayer?.is_alive;
 
   /* ── auth ── */
   useEffect(() => {
@@ -86,15 +122,20 @@ export default function RoomPage() {
   /* ── realtime ── */
   useEffect(() => {
     if (!room) return;
-    const ch = supabase.channel(`room-${room.id}`)
+    const ch = supabase
+      .channel(`room-${room.id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "rooms", filter: `id=eq.${room.id}` }, (p) => {
         setRoom(p.new as Room);
         setSorcHealUsed((p.new as Room).witch_heal_used ?? false);
         setSorcKillUsed((p.new as Room).witch_kill_used ?? false);
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "players", filter: `room_id=eq.${room.id}` }, () => loadRoom())
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "votes", filter: `room_id=eq.${room.id}` }, (p) => setVotes((prev) => [...prev.filter((v) => v.id !== (p.new as Vote).id), p.new as Vote]))
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "events", filter: `room_id=eq.${room.id}` }, (p) => setEvents((prev) => [p.new as GameEvent, ...prev].slice(0, 30)))
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "votes", filter: `room_id=eq.${room.id}` }, (p) =>
+        setVotes((prev) => [...prev.filter((v) => v.id !== (p.new as Vote).id), p.new as Vote])
+      )
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "events", filter: `room_id=eq.${room.id}` }, (p) =>
+        setEvents((prev) => [p.new as GameEvent, ...prev].slice(0, 30))
+      )
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [room?.id, loadRoom]);
@@ -104,7 +145,7 @@ export default function RoomPage() {
     if (room?.status === "role_reveal" && myPlayer?.role) setShowRoleCard(true);
   }, [room?.status, myPlayer?.role]);
 
-  /* ── reset per-phase state on phase change ── */
+  /* ── reset per-phase state ── */
   useEffect(() => {
     if (!room) return;
     if (prevStatusRef.current !== room.status) {
@@ -120,21 +161,18 @@ export default function RoomPage() {
   useEffect(() => {
     if (!room || !players.length) return;
     if (botTimerRef.current) clearTimeout(botTimerRef.current);
-
     const bots = players.filter((p) => p.is_bot && p.is_alive);
     if (!bots.length) return;
 
-    // role_reveal: host auto-advances after delay (only in tester/bot game)
-    if (room.status === "role_reveal" && isHost && bots.length > 0) {
+    if (room.status === "role_reveal" && isHost) {
       botTimerRef.current = setTimeout(async () => {
         await fetch("/api/room/bot-turn", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ roomId: room.id, action: "advance_from_reveal", userId }),
         });
-      }, 6000);
+      }, 7000);
     }
 
-    // night: bots act for their role, then trigger night-action resolution
     if (room.status === "night" && room.current_phase_role) {
       const botWithRole = bots.find((b) => b.role === room.current_phase_role);
       if (botWithRole) {
@@ -147,19 +185,16 @@ export default function RoomPage() {
       }
     }
 
-    // day_summary: host auto-opens vote
-    if (room.status === "day_summary" && isHost && bots.length > 0) {
+    if (room.status === "day_summary" && isHost) {
       botTimerRef.current = setTimeout(async () => {
-        await fetch(`/api/room/vote`, {
+        await fetch("/api/room/vote", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ roomId: room.id, userId }),
         });
-      }, 4000);
+      }, 5000);
     }
 
-    // day_vote: bots vote after delay, then host closes vote
     if (room.status === "day_vote") {
-      const aliveP = players.filter((p) => p.is_alive);
       botTimerRef.current = setTimeout(async () => {
         await fetch("/api/room/bot-turn", {
           method: "POST", headers: { "Content-Type": "application/json" },
@@ -174,17 +209,15 @@ export default function RoomPage() {
   /* ── actions ── */
   const submitNightAction = useCallback(async (actionType: string, targetId: string | null, extra?: Record<string, unknown>) => {
     if (!myPlayer || !room || myNightAction) return;
-    const { data } = await supabase.from("night_actions")
+    const { data } = await supabase
+      .from("night_actions")
       .insert({ room_id: room.id, night: room.night_number, role: myPlayer.role, action_type: actionType, actor_id: myPlayer.id, target_id: targetId, result: extra ?? {} })
       .select().single();
     if (data) setMyNightAction(data as NightAction);
-
-    // If voyante, show result locally
     if (myPlayer.role === "Voyante" && targetId) {
       const target = players.find((p) => p.id === targetId);
       if (target?.role) setVoyResult({ name: target.name, role: target.role as RoleName });
     }
-
     await fetch("/api/room/night-action", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ roomId: room.id, role: myPlayer.role }),
@@ -207,9 +240,7 @@ export default function RoomPage() {
     });
   };
 
-  /* ── my night turn UI ── */
-  const isMyNightTurn = room?.status === "night" && room.current_phase_role === myPlayer?.role && !myNightAction && myPlayer?.is_alive;
-
+  /* ── Night action UI ── */
   const NightActionUI = () => {
     if (!myPlayer || !room || !isMyNightTurn) return null;
     const role = myPlayer.role as RoleName;
@@ -218,21 +249,21 @@ export default function RoomPage() {
     if (role === "Loup-Garou") {
       const teammates = players.filter((p) => p.role === "Loup-Garou" && p.id !== myPlayer.id);
       return (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {teammates.length > 0 && (
-            <div className="p-3 rounded-xl" style={{ background: "rgba(220,38,38,0.1)", border: "1px solid rgba(220,38,38,0.2)" }}>
-              <p className="font-cinzel text-wolves text-xs uppercase mb-1">Vos frères loups</p>
-              <p className="text-wolves/70 text-sm">{teammates.map((t) => t.name).join(", ")}</p>
+            <div className="p-3 rounded-xl text-sm" style={{ background: "rgba(220,38,38,0.1)", border: "1px solid rgba(220,38,38,0.2)" }}>
+              <p className="font-cinzel text-wolves text-[10px] uppercase mb-1">Vos frères loups</p>
+              <p className="text-wolves/70 text-xs">{teammates.map((t) => t.name).join(", ")}</p>
             </div>
           )}
-          <p className="font-cinzel text-xs text-wolves/80 uppercase tracking-widest">Choisissez votre victime</p>
-          <div className="grid grid-cols-2 gap-3">
+          <p className="font-cinzel text-[10px] text-wolves/80 uppercase tracking-widest">Choisissez votre victime</p>
+          <div className="grid grid-cols-2 gap-2">
             {targets.map((p) => (
               <button key={p.id} onClick={() => submitNightAction("kill", p.id)}
-                className="glass rounded-xl p-4 text-center hover:scale-105 active:scale-95 transition-all"
+                className="glass rounded-xl p-3 text-center hover:scale-[1.02] active:scale-95 transition-all"
                 style={{ borderColor: "rgba(220,38,38,0.3)" }}>
-                <div className="text-3xl mb-2">🎭</div>
-                <p className="font-cinzel text-sm text-white">{p.name}</p>
+                <div className="text-2xl mb-1">🎭</div>
+                <p className="font-cinzel text-xs text-white leading-tight">{p.name}</p>
               </button>
             ))}
           </div>
@@ -244,25 +275,24 @@ export default function RoomPage() {
       if (voyResult) {
         const rc = ROLES[voyResult.role];
         return (
-          <div className="text-center p-6 rounded-2xl" style={{ background: `${rc.color}15`, border: `1px solid ${rc.color}30` }}>
-            <div className="text-5xl mb-3">{rc.emoji}</div>
-            <p className="font-cinzel text-white/60 text-xs uppercase mb-1">Vous apprenez que</p>
-            <p className="font-cinzel font-bold text-xl text-white mb-1">{voyResult.name}</p>
-            <p className="font-cinzel font-bold text-lg" style={{ color: rc.color }}>est {voyResult.role}</p>
-            <p className="text-white/40 text-xs mt-3">Cette information est votre secret</p>
+          <div className="text-center p-4 rounded-2xl" style={{ background: `${rc.color}15`, border: `1px solid ${rc.color}30` }}>
+            <div className="text-4xl mb-2">{rc.emoji}</div>
+            <p className="font-cinzel text-white/60 text-[10px] uppercase mb-1">Votre vision révèle</p>
+            <p className="font-cinzel font-bold text-base text-white">{voyResult.name}</p>
+            <p className="font-cinzel font-bold text-sm mt-1" style={{ color: rc.color }}>est {voyResult.role}</p>
           </div>
         );
       }
       return (
         <div className="space-y-3">
-          <p className="font-cinzel text-xs text-purple-400 uppercase tracking-widest">Découvrez le rôle d'un joueur</p>
-          <div className="grid grid-cols-2 gap-3">
+          <p className="font-cinzel text-[10px] text-purple-400 uppercase tracking-widest">Découvrez le rôle d'un joueur</p>
+          <div className="grid grid-cols-2 gap-2">
             {targets.map((p) => (
               <button key={p.id} onClick={() => submitNightAction("reveal", p.id)}
-                className="glass rounded-xl p-4 text-center hover:scale-105 active:scale-95 transition-all"
+                className="glass rounded-xl p-3 text-center hover:scale-[1.02] active:scale-95 transition-all"
                 style={{ borderColor: "rgba(155,89,182,0.3)" }}>
-                <div className="text-3xl mb-2">🔮</div>
-                <p className="font-cinzel text-sm text-white">{p.name}</p>
+                <div className="text-2xl mb-1">🔮</div>
+                <p className="font-cinzel text-xs text-white leading-tight">{p.name}</p>
               </button>
             ))}
           </div>
@@ -272,34 +302,34 @@ export default function RoomPage() {
 
     if (role === "Sorciere") {
       return (
-        <div className="space-y-4">
-          <div className="flex gap-3">
+        <div className="space-y-3">
+          <div className="flex gap-2">
             {!sorcHealUsed && (
               <button onClick={() => setSorcMode(sorcMode === "heal" ? null : "heal")}
-                className={cls("flex-1 py-3 rounded-xl font-cinzel text-sm transition-all", sorcMode === "heal" ? "bg-green-600 text-white" : "glass text-green-400 border-green-500/30")}>
-                🧪 Potion de Vie
+                className={cls("flex-1 py-2.5 rounded-xl font-cinzel text-xs transition-all", sorcMode === "heal" ? "bg-green-600 text-white" : "glass text-green-400 border-green-500/30")}>
+                🧪 Vie
               </button>
             )}
             {!sorcKillUsed && (
               <button onClick={() => setSorcMode(sorcMode === "poison" ? null : "poison")}
-                className={cls("flex-1 py-3 rounded-xl font-cinzel text-sm transition-all", sorcMode === "poison" ? "bg-red-700 text-white" : "glass text-red-400 border-red-500/30")}>
+                className={cls("flex-1 py-2.5 rounded-xl font-cinzel text-xs transition-all", sorcMode === "poison" ? "bg-red-700 text-white" : "glass text-red-400 border-red-500/30")}>
                 ☠️ Poison
               </button>
             )}
           </div>
           {sorcMode && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2">
               {targets.map((p) => (
                 <button key={p.id} onClick={() => { submitNightAction(sorcMode === "heal" ? "heal" : "poison", p.id); setSorcMode(null); }}
-                  className="glass rounded-xl p-3 text-center hover:scale-105 transition-all">
-                  <div className="text-2xl mb-1">{sorcMode === "heal" ? "💚" : "☠️"}</div>
-                  <p className="font-cinzel text-xs text-white">{p.name}</p>
+                  className="glass rounded-xl p-3 text-center hover:scale-[1.02] transition-all active:scale-95">
+                  <div className="text-xl mb-1">{sorcMode === "heal" ? "💚" : "☠️"}</div>
+                  <p className="font-cinzel text-xs text-white leading-tight">{p.name}</p>
                 </button>
               ))}
             </div>
           )}
           <button onClick={() => submitNightAction("pass", null)}
-            className="w-full py-2 rounded-xl border border-white/10 font-cinzel text-white/40 text-sm hover:text-white/60 transition-all">
+            className="w-full py-2 rounded-xl border border-white/10 font-cinzel text-white/40 text-xs hover:text-white/60 transition-all">
             Ne rien faire
           </button>
         </div>
@@ -309,19 +339,19 @@ export default function RoomPage() {
     if (role === "Garde") {
       return (
         <div className="space-y-3">
-          <p className="font-cinzel text-xs text-blue-400 uppercase tracking-widest">Protégez un joueur cette nuit</p>
-          <div className="grid grid-cols-2 gap-3">
+          <p className="font-cinzel text-[10px] text-blue-400 uppercase tracking-widest">Protégez un joueur</p>
+          <div className="grid grid-cols-2 gap-2">
             {targets.map((p) => (
               <button key={p.id} onClick={() => submitNightAction("protect", p.id)}
-                className="glass rounded-xl p-4 text-center hover:scale-105 active:scale-95 transition-all"
+                className="glass rounded-xl p-3 text-center hover:scale-[1.02] active:scale-95 transition-all"
                 style={{ borderColor: "rgba(37,99,235,0.3)" }}>
-                <div className="text-3xl mb-2">🛡️</div>
-                <p className="font-cinzel text-sm text-white">{p.name}</p>
+                <div className="text-2xl mb-1">🛡️</div>
+                <p className="font-cinzel text-xs text-white leading-tight">{p.name}</p>
               </button>
             ))}
           </div>
           <button onClick={() => submitNightAction("pass", null)}
-            className="w-full py-2 rounded-xl border border-white/10 font-cinzel text-white/40 text-sm hover:text-white/60 transition-all">
+            className="w-full py-2 rounded-xl border border-white/10 font-cinzel text-white/40 text-xs hover:text-white/60 transition-all">
             Ne protéger personne
           </button>
         </div>
@@ -331,8 +361,7 @@ export default function RoomPage() {
     if (role === "Cupidon" && room.night_number === 1) {
       return (
         <div className="space-y-3">
-          <p className="font-cinzel text-xs text-pink-400 uppercase tracking-widest">Liez deux amoureux (vous pouvez vous inclure)</p>
-          <p className="text-white/40 text-xs">Cliquez deux joueurs pour les unir</p>
+          <p className="font-cinzel text-[10px] text-pink-400 uppercase tracking-widest">Liez deux amoureux</p>
           <CupidonPicker alive={[myPlayer, ...targets]} onLink={(a, b) => submitNightAction("link_lovers", a, { lover2: b })} />
         </div>
       );
@@ -340,12 +369,12 @@ export default function RoomPage() {
 
     if (role === "Petite Fille") {
       return (
-        <div className="text-center space-y-4">
-          <div className="text-5xl">👧</div>
-          <p className="font-cinzel text-amber-400">Vous espionnez les loups...</p>
-          <p className="text-white/40 text-sm">Vous pouvez voir dans la nuit.<br/>Mais faites attention à ne pas vous faire repérer.</p>
+        <div className="text-center space-y-3">
+          <div className="text-4xl">👧</div>
+          <p className="font-cinzel text-amber-400 text-sm">Vous espionnez les loups…</p>
           <button onClick={() => submitNightAction("spy", null)}
-            className="w-full py-3 rounded-xl bg-amber-600/20 border border-amber-500/40 font-cinzel text-amber-400 hover:bg-amber-600/30 transition-all">
+            className="w-full py-3 rounded-xl font-cinzel text-amber-400 text-sm transition-all"
+            style={{ background: "rgba(217,119,6,0.15)", border: "1px solid rgba(217,119,6,0.35)" }}>
             Terminer l'espionnage
           </button>
         </div>
@@ -375,96 +404,119 @@ export default function RoomPage() {
     </div>
   );
 
-  /* ── render ── */
+  const roleInfo = myPlayer?.role ? ROLES[myPlayer.role as RoleName] : null;
+
   return (
     <div className="min-h-screen bg-bg-base">
       {room.status === "night" && <div className="fixed inset-0 night-overlay z-0 pointer-events-none" />}
 
-      {/* Role card modal */}
+      {/* ─── Role card modal — SCROLLABLE, compact, button always visible ─── */}
       <AnimatePresence>
-        {showRoleCard && myPlayer?.role && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[70] bg-black/95 flex items-center justify-center p-4">
-            <motion.div initial={{ scale: 0.8, y: 30 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.8, opacity: 0 }}
-              className="w-full max-w-sm">
-              <p className="text-center font-cinzel text-gold/80 text-xs tracking-[0.3em] uppercase mb-6">Votre rôle secret</p>
-              <div className="glass rounded-3xl overflow-hidden"
-                style={{ border: `1px solid ${ROLES[myPlayer.role]?.color}50`, boxShadow: `0 0 80px ${ROLES[myPlayer.role]?.color}25` }}>
-                <div className="aspect-[3/4] flex items-center justify-center"
-                  style={{ background: `radial-gradient(ellipse at center, ${ROLES[myPlayer.role]?.color}25, #07070f)` }}>
+        {showRoleCard && myPlayer?.role && roleInfo && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[70] bg-black/95 flex flex-col overflow-y-auto"
+            style={{ WebkitOverflowScrolling: "touch" }}
+          >
+            <div className="flex-1 flex flex-col items-center justify-start px-4 pt-8 pb-6 min-h-full">
+              <p className="font-cinzel text-gold/70 text-[10px] tracking-[0.3em] uppercase mb-4">Votre rôle secret</p>
+
+              {/* compact card — no tall aspect-ratio */}
+              <div
+                className="w-full max-w-xs rounded-2xl overflow-hidden mb-4"
+                style={{ border: `1px solid ${roleInfo.color}40`, boxShadow: `0 0 50px ${roleInfo.color}20` }}
+              >
+                {/* Role image area — fixed small height */}
+                <div
+                  className="h-32 flex items-center justify-center relative"
+                  style={{ background: `radial-gradient(ellipse at center, ${roleInfo.color}30, #07070f)` }}
+                >
                   {myPlayer.role_card_url
-                    ? <img src={myPlayer.role_card_url} alt={myPlayer.role} className="w-full h-full object-cover" />
-                    : <span className="text-[100px]">{ROLES[myPlayer.role]?.emoji}</span>}
+                    ? <img src={myPlayer.role_card_url} alt={myPlayer.role} className="h-full w-full object-cover" />
+                    : <span className="text-[72px] leading-none">{roleInfo.emoji}</span>
+                  }
                 </div>
-                <div className="p-6">
-                  <p className="font-cinzel text-white/40 text-xs uppercase tracking-widest mb-1">Vous êtes</p>
-                  <h3 className="font-cinzel font-bold text-2xl" style={{ color: ROLES[myPlayer.role]?.color }}>
-                    {ROLES[myPlayer.role]?.emoji} {myPlayer.role}
+
+                {/* Role info */}
+                <div className="p-4 glass">
+                  <p className="font-cinzel text-white/40 text-[10px] uppercase tracking-widest mb-0.5">Vous êtes</p>
+                  <h3 className="font-cinzel font-bold text-xl leading-tight" style={{ color: roleInfo.color }}>
+                    {roleInfo.emoji} {myPlayer.role}
                   </h3>
-                  <p className="text-white/60 text-sm mt-2 leading-relaxed">{ROLES[myPlayer.role]?.description}</p>
+                  <p className="text-white/60 text-xs mt-2 leading-relaxed">{roleInfo.description}</p>
                   {myPlayer.role === "Loup-Garou" && (
-                    <div className="mt-3 p-3 rounded-xl" style={{ background: "rgba(220,38,38,0.15)", border: "1px solid rgba(220,38,38,0.3)" }}>
-                      <p className="font-cinzel text-wolves text-xs uppercase mb-1">Vos frères loups</p>
-                      <p className="text-wolves/80 text-sm">
+                    <div className="mt-3 p-2.5 rounded-xl" style={{ background: "rgba(220,38,38,0.15)", border: "1px solid rgba(220,38,38,0.3)" }}>
+                      <p className="font-cinzel text-wolves text-[10px] uppercase mb-1">Vos frères loups</p>
+                      <p className="text-wolves/80 text-xs">
                         {players.filter((p) => p.role === "Loup-Garou" && p.id !== myPlayer.id).map((p) => p.name).join(", ") || "Aucun"}
                       </p>
                     </div>
                   )}
                 </div>
               </div>
-              <button onClick={() => setShowRoleCard(false)}
-                className="w-full mt-4 py-3.5 bg-gold/20 border border-gold/40 rounded-xl font-cinzel text-gold hover:bg-gold/30 transition-all font-semibold">
+
+              {/* Button — always in DOM flow, never off-screen */}
+              <button
+                onClick={() => setShowRoleCard(false)}
+                className="w-full max-w-xs py-4 rounded-xl font-cinzel font-bold text-sm tracking-widest uppercase transition-all active:scale-95"
+                style={{ background: `${roleInfo.color}25`, border: `1px solid ${roleInfo.color}50`, color: roleInfo.color }}
+              >
                 J'ai compris mon rôle ✓
               </button>
-            </motion.div>
+
+              <p className="text-white/20 text-[10px] mt-3 font-cinzel">Gardez votre rôle secret</p>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* Header */}
       <header className="sticky top-0 z-50 glass-dark border-b border-bg-border">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <span className="text-xl">🐺</span>
-            <div>
-              <h1 className="font-cinzel font-bold text-white text-sm">Loup-Garou</h1>
-              <p className="text-white/30 text-xs font-cinzel">CODE: {code}</p>
+        <div className="px-3 py-2.5 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-base shrink-0">🐺</span>
+            <div className="min-w-0">
+              <h1 className="font-cinzel font-bold text-white text-sm leading-tight truncate">Loup-Garou</h1>
+              <p className="text-white/30 text-[10px] font-cinzel truncate">CODE: {code}</p>
             </div>
           </div>
           <PhaseBar room={room} />
-          {myPlayer?.role && (
-            <button onClick={() => setShowRoleCard(true)}
-              className="flex items-center gap-2 glass rounded-xl px-3 py-1.5 hover:border-gold/40 transition-all">
-              <span>{ROLES[myPlayer.role]?.emoji}</span>
-              <span className="font-cinzel text-xs text-white/60 hidden sm:block">{myPlayer.role}</span>
+          {myPlayer?.role && roleInfo && (
+            <button
+              onClick={() => setShowRoleCard(true)}
+              className="shrink-0 glass rounded-lg px-2 py-1.5 flex items-center gap-1.5 hover:border-gold/40 transition-all active:scale-95"
+            >
+              <span className="text-sm">{roleInfo.emoji}</span>
+              <span className="font-cinzel text-[10px] text-white/60 hidden sm:block truncate max-w-[80px]">{myPlayer.role}</span>
             </button>
           )}
         </div>
       </header>
 
       {/* Body */}
-      <div className="max-w-6xl mx-auto px-4 py-6 relative z-10">
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-6">
+      <div className="px-3 py-4 relative z-10 max-w-2xl mx-auto lg:max-w-6xl">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4">
 
-          {/* Main panel */}
-          <div className="space-y-4">
+          {/* ── Main panel ── */}
+          <div className="space-y-3">
             <AnimatePresence mode="wait">
 
               {/* LOBBY */}
               {room.status === "lobby" && (
-                <motion.div key="lobby" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                  className="glass rounded-2xl p-6">
-                  <div className="text-center mb-8">
-                    <p className="font-cinzel text-white/40 text-xs uppercase tracking-widest mb-3">Code de la salle</p>
-                    <div className="inline-block glass rounded-2xl px-8 py-4" style={{ border: "1px solid rgba(201,168,76,0.4)" }}>
-                      <span className="font-cinzel font-black text-4xl md:text-5xl text-gold tracking-[0.4em]">{room.code}</span>
+                <motion.div key="lobby" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                  className="glass rounded-2xl p-4">
+                  <div className="text-center mb-6">
+                    <p className="font-cinzel text-white/40 text-[10px] uppercase tracking-widest mb-2">Code de la salle</p>
+                    <div className="inline-block glass rounded-xl px-6 py-3" style={{ border: "1px solid rgba(201,168,76,0.4)" }}>
+                      <span className="font-cinzel font-black text-3xl text-gold tracking-[0.4em]">{room.code}</span>
                     </div>
-                    <p className="text-white/30 text-xs mt-3">Partagez ce code avec vos amis</p>
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-6">
+                  <div className="grid grid-cols-2 gap-2 mb-5">
                     {players.map((p) => (
-                      <div key={p.id} className="glass rounded-xl px-3 py-2 flex items-center gap-2">
-                        <span className="text-lg">🧙</span>
+                      <div key={p.id} className="glass rounded-lg px-3 py-2 flex items-center gap-2">
+                        <span className="text-sm">🧙</span>
                         <span className="font-cinzel text-xs text-white truncate">{p.name}</span>
                         {room.host_id === p.user_id && <span className="ml-auto text-gold text-xs">♛</span>}
                       </div>
@@ -472,65 +524,68 @@ export default function RoomPage() {
                   </div>
                   {isHost
                     ? <button onClick={() => hostAction("start")} disabled={players.length < 4}
-                        className={cls("w-full py-4 rounded-xl font-cinzel font-bold tracking-widest uppercase transition-all",
-                          players.length >= 4 ? "bg-gold text-bg-base hover:bg-gold-light shadow-gold" : "bg-white/5 text-white/20 cursor-not-allowed")}>
-                        {players.length >= 4 ? "⚔️ Lancer la Partie" : `En attente (${players.length}/4)`}
+                        className={cls("w-full py-3.5 rounded-xl font-cinzel font-bold tracking-widest uppercase text-sm transition-all",
+                          players.length >= 4 ? "bg-gold text-bg-base active:scale-95 shadow-gold" : "bg-white/5 text-white/20 cursor-not-allowed")}>
+                        {players.length >= 4 ? "⚔️ Lancer" : `En attente (${players.length}/4)`}
                       </button>
-                    : <p className="text-center text-white/30 font-cinzel text-sm py-4">En attente de l'hôte…</p>}
+                    : <p className="text-center text-white/30 font-cinzel text-xs py-3">En attente de l'hôte…</p>
+                  }
                 </motion.div>
               )}
 
               {/* ROLE REVEAL */}
               {room.status === "role_reveal" && (
-                <motion.div key="reveal" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                  className="glass rounded-2xl p-6 text-center">
-                  <div className="text-5xl mb-4">🃏</div>
-                  <h2 className="font-cinzel font-bold text-2xl text-white mb-2">Les rôles ont été distribués</h2>
-                  <p className="text-white/50 text-sm mb-6">Consultez votre rôle secret. La nuit tombe dans quelques instants…</p>
-                  {myPlayer?.role && (
-                    <div className="p-4 rounded-2xl mb-6 inline-block"
-                      style={{ background: `${ROLES[myPlayer.role]?.color}15`, border: `1px solid ${ROLES[myPlayer.role]?.color}30` }}>
-                      <span className="text-4xl">{ROLES[myPlayer.role]?.emoji}</span>
-                      <p className="font-cinzel font-bold mt-2" style={{ color: ROLES[myPlayer.role]?.color }}>{myPlayer.role}</p>
+                <motion.div key="reveal" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                  className="glass rounded-2xl p-4 text-center">
+                  <div className="text-3xl mb-3">🃏</div>
+                  <h2 className="font-cinzel font-bold text-lg text-white mb-1">Rôles distribués</h2>
+                  <p className="text-white/50 text-xs mb-4">La nuit tombe dans quelques instants…</p>
+                  {myPlayer?.role && roleInfo && (
+                    <div className="p-3 rounded-xl mb-4 inline-block"
+                      style={{ background: `${roleInfo.color}15`, border: `1px solid ${roleInfo.color}30` }}>
+                      <span className="text-3xl">{roleInfo.emoji}</span>
+                      <p className="font-cinzel font-bold text-sm mt-1" style={{ color: roleInfo.color }}>{myPlayer.role}</p>
                     </div>
                   )}
                   <button onClick={() => setShowRoleCard(true)}
-                    className="w-full py-3 rounded-xl bg-purple-600/30 border border-purple-500/40 font-cinzel text-purple-300 hover:bg-purple-600/40 transition-all">
+                    className="w-full py-3 rounded-xl font-cinzel text-purple-300 text-sm mb-2 transition-all active:scale-95"
+                    style={{ background: "rgba(155,89,182,0.2)", border: "1px solid rgba(155,89,182,0.4)" }}>
                     Voir mon rôle en détail
                   </button>
                   {isHost && (
-                    <button onClick={() => hostAction("advance-reveal")} className="w-full mt-3 py-3 rounded-xl bg-gold/20 border border-gold/40 font-cinzel text-gold hover:bg-gold/30 transition-all text-sm">
+                    <button onClick={() => hostAction("advance-reveal")}
+                      className="w-full py-3 rounded-xl font-cinzel text-gold text-sm transition-all active:scale-95"
+                      style={{ background: "rgba(201,168,76,0.15)", border: "1px solid rgba(201,168,76,0.35)" }}>
                       Commencer la nuit →
                     </button>
                   )}
-                  <p className="text-white/20 text-xs mt-4 font-cinzel">La nuit commence automatiquement…</p>
+                  <p className="text-white/20 text-[10px] mt-3 font-cinzel">Commence automatiquement…</p>
                 </motion.div>
               )}
 
               {/* NIGHT */}
               {room.status === "night" && myPlayer && (
                 <motion.div key="night" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                  className="glass rounded-2xl p-6">
-                  <div className="flex items-center gap-3 mb-6">
-                    <span className="text-3xl">🌙</span>
+                  className="glass rounded-2xl p-4">
+                  <div className="flex items-center gap-2.5 mb-4">
+                    <span className="text-2xl">🌙</span>
                     <div>
-                      <h2 className="font-cinzel font-bold text-white text-lg">Nuit {room.night_number}</h2>
-                      <p className="text-indigo-400/80 text-xs font-cinzel">
-                        {isMyNightTurn ? "⚡ C'est votre tour d'agir" : `⏳ En attente de ${room.current_phase_role ?? "…"}`}
+                      <h2 className="font-cinzel font-bold text-white text-base">Nuit {room.night_number}</h2>
+                      <p className="text-indigo-400/80 text-[10px] font-cinzel">
+                        {isMyNightTurn ? "⚡ Votre tour" : `⏳ ${room.current_phase_role ?? "…"}`}
                       </p>
                     </div>
                   </div>
-
                   {myNightAction ? (
-                    <div className="text-center py-6">
-                      <div className="text-4xl mb-3">✅</div>
-                      <p className="font-cinzel text-gold">Action soumise</p>
-                      <p className="text-white/40 text-sm mt-2">En attente des autres joueurs…</p>
-                      {voyResult && (
-                        <div className="mt-4 p-4 rounded-xl" style={{ background: `${ROLES[voyResult.role]?.color}15`, border: `1px solid ${ROLES[voyResult.role]?.color}30` }}>
-                          <p className="font-cinzel text-white/60 text-xs uppercase mb-1">Votre vision</p>
-                          <p className="font-cinzel font-bold" style={{ color: ROLES[voyResult.role]?.color }}>
-                            {ROLES[voyResult.role]?.emoji} {voyResult.name} est {voyResult.role}
+                    <div className="text-center py-5">
+                      <div className="text-3xl mb-2">✅</div>
+                      <p className="font-cinzel text-gold text-sm">Action soumise</p>
+                      <p className="text-white/40 text-xs mt-1">En attente…</p>
+                      {voyResult && ROLES[voyResult.role] && (
+                        <div className="mt-3 p-3 rounded-xl inline-block" style={{ background: `${ROLES[voyResult.role].color}15`, border: `1px solid ${ROLES[voyResult.role].color}30` }}>
+                          <p className="font-cinzel text-white/60 text-[10px] uppercase mb-1">Votre vision</p>
+                          <p className="font-cinzel font-bold text-sm" style={{ color: ROLES[voyResult.role].color }}>
+                            {ROLES[voyResult.role].emoji} {voyResult.name} est {voyResult.role}
                           </p>
                         </div>
                       )}
@@ -538,10 +593,10 @@ export default function RoomPage() {
                   ) : isMyNightTurn ? (
                     <NightActionUI />
                   ) : (
-                    <div className="text-center py-8">
-                      <motion.div animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 2, repeat: Infinity }} className="text-5xl mb-4">😴</motion.div>
-                      <p className="font-cinzel text-white/40">Le village dort…</p>
-                      <p className="text-white/20 text-sm mt-2">{room.current_phase_role} est en train d'agir</p>
+                    <div className="text-center py-6">
+                      <motion.div animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 2, repeat: Infinity }} className="text-4xl mb-3">😴</motion.div>
+                      <p className="font-cinzel text-white/40 text-sm">Le village dort…</p>
+                      <p className="text-white/20 text-xs mt-1">{room.current_phase_role} agit</p>
                     </div>
                   )}
                 </motion.div>
@@ -549,66 +604,69 @@ export default function RoomPage() {
 
               {/* DAY SUMMARY */}
               {room.status === "day_summary" && (
-                <motion.div key="summary" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                  className="glass rounded-2xl p-6">
-                  <div className="flex items-center gap-3 mb-6">
-                    <span className="text-3xl">🌅</span>
+                <motion.div key="summary" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                  className="glass rounded-2xl p-4">
+                  <div className="flex items-center gap-2.5 mb-4">
+                    <span className="text-2xl">🌅</span>
                     <div>
-                      <h2 className="font-cinzel font-bold text-white text-lg">L'Aube se lève</h2>
-                      <p className="text-orange-400/80 text-xs">Jour {room.day_number}</p>
+                      <h2 className="font-cinzel font-bold text-white text-base">L'Aube se lève</h2>
+                      <p className="text-orange-400/80 text-[10px] font-cinzel">Jour {room.day_number}</p>
                     </div>
                   </div>
-                  <div className="space-y-3 mb-6">
+                  <div className="space-y-2 mb-4">
                     {(room.night_summary as string[] ?? []).map((msg, i) => (
-                      <motion.div key={i} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.2 }}
-                        className="flex items-start gap-3 p-4 rounded-xl"
-                        style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                        <p className="text-white/80 text-sm">{msg}</p>
+                      <motion.div key={i} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.2 }}
+                        className="p-3 rounded-xl" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                        <p className="text-white/80 text-xs leading-relaxed">{msg}</p>
                       </motion.div>
                     ))}
                   </div>
                   {isHost && (
                     <button onClick={() => hostAction("vote")}
-                      className="w-full py-3 rounded-xl font-cinzel text-sm transition-all"
-                      style={{ background: "rgba(220,38,38,0.2)", border: "1px solid rgba(220,38,38,0.4)", color: "#dc2626" }}>
+                      className="w-full py-3 rounded-xl font-cinzel text-sm transition-all active:scale-95"
+                      style={{ background: "rgba(220,38,38,0.15)", border: "1px solid rgba(220,38,38,0.35)", color: "#dc2626" }}>
                       ⚖️ Ouvrir le vote
                     </button>
                   )}
-                  <p className="text-white/20 text-xs text-center mt-3 font-cinzel">Le vote s'ouvre automatiquement…</p>
+                  <p className="text-white/20 text-[10px] text-center mt-2 font-cinzel">Vote automatique…</p>
                 </motion.div>
               )}
 
               {/* DAY VOTE */}
               {room.status === "day_vote" && (
-                <motion.div key="vote" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                  className="glass rounded-2xl p-6">
-                  <div className="flex items-center gap-3 mb-6">
-                    <span className="text-3xl">⚖️</span>
+                <motion.div key="vote" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                  className="glass rounded-2xl p-4">
+                  <div className="flex items-center gap-2.5 mb-4">
+                    <span className="text-2xl">⚖️</span>
                     <div>
-                      <h2 className="font-cinzel font-bold text-white">Vote du Village</h2>
-                      <p className="text-red-400/80 text-xs">{myVote ? "Vote soumis ✓" : "Qui est le loup-garou?"}</p>
+                      <h2 className="font-cinzel font-bold text-white text-base">Vote du Village</h2>
+                      <p className="text-red-400/80 text-[10px] font-cinzel">{myVote ? "Vote soumis ✓" : "Qui est suspect?"}</p>
                     </div>
                   </div>
                   {!myPlayer?.is_alive && (
-                    <div className="text-center py-4 text-white/30 font-cinzel text-sm mb-4">Vous êtes mort(e) — spectateur uniquement</div>
+                    <div className="text-center py-2 text-white/30 font-cinzel text-xs mb-3">Spectateur</div>
                   )}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 gap-2">
                     {alive.map((p) => {
                       const vc = votes.filter((v) => v.target_id === p.id).length;
                       const isMe = p.user_id === userId;
                       const voted = myVote === p.id;
                       return (
-                        <button key={p.id}
+                        <button
+                          key={p.id}
                           onClick={() => myPlayer?.is_alive && !myVote && !isMe && submitVote(p.id)}
                           disabled={!!myVote || isMe || !myPlayer?.is_alive}
-                          className={cls("glass rounded-xl p-3 text-center transition-all relative overflow-hidden",
-                            voted ? "scale-105" : (!myVote && !isMe && myPlayer?.is_alive) ? "hover:scale-105 cursor-pointer" : "cursor-default")}
-                          style={voted ? { borderColor: "#dc2626", boxShadow: "0 0 16px rgba(220,38,38,0.3)" } : {}}>
-                          <div className="text-2xl mb-1">🎭</div>
-                          <p className="font-cinzel text-xs text-white">{p.name}</p>
-                          {isMe && <p className="text-[10px] text-gold/50 font-cinzel">Vous</p>}
+                          className={cls(
+                            "glass rounded-xl p-3 text-center transition-all relative overflow-hidden",
+                            voted ? "scale-[1.03]" : (!myVote && !isMe && myPlayer?.is_alive) ? "hover:scale-[1.02] active:scale-95 cursor-pointer" : "cursor-default"
+                          )}
+                          style={voted ? { borderColor: "#dc2626", boxShadow: "0 0 14px rgba(220,38,38,0.3)" } : {}}
+                        >
+                          <div className="text-xl mb-1">🎭</div>
+                          <p className="font-cinzel text-xs text-white leading-tight">{p.name}</p>
+                          {isMe && <p className="text-[9px] text-gold/50 font-cinzel">Vous</p>}
                           {vc > 0 && (
-                            <span className="absolute top-1 right-1 bg-wolves text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center font-bold">{vc}</span>
+                            <span className="absolute top-1 right-1 bg-wolves text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold">{vc}</span>
                           )}
                         </button>
                       );
@@ -616,49 +674,52 @@ export default function RoomPage() {
                   </div>
                   {isHost && (
                     <button onClick={() => hostAction("vote")}
-                      className="mt-6 w-full py-3 rounded-xl font-cinzel text-sm transition-all"
-                      style={{ background: "rgba(220,38,38,0.15)", border: "1px solid rgba(220,38,38,0.35)", color: "#dc2626" }}>
-                      Clôturer le vote (Host)
+                      className="mt-4 w-full py-3 rounded-xl font-cinzel text-sm transition-all active:scale-95"
+                      style={{ background: "rgba(220,38,38,0.12)", border: "1px solid rgba(220,38,38,0.3)", color: "#dc2626" }}>
+                      Clôturer le vote
                     </button>
                   )}
                 </motion.div>
               )}
 
-              {/* WIN SCREEN */}
+              {/* WIN */}
               {room.status === "ended" && (
                 <motion.div key="ended" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-                  className="glass rounded-3xl p-8 text-center"
+                  className="glass rounded-2xl p-5 text-center"
                   style={{
                     borderColor: room.winner === "wolves" ? "rgba(220,38,38,0.5)" : room.winner === "lovers" ? "rgba(236,72,153,0.5)" : "rgba(22,163,74,0.5)",
-                    boxShadow: `0 0 80px ${room.winner === "wolves" ? "rgba(220,38,38,0.25)" : room.winner === "lovers" ? "rgba(236,72,153,0.25)" : "rgba(201,168,76,0.2)"}`,
+                    boxShadow: `0 0 60px ${room.winner === "wolves" ? "rgba(220,38,38,0.2)" : room.winner === "lovers" ? "rgba(236,72,153,0.2)" : "rgba(201,168,76,0.15)"}`,
                   }}>
-                  <motion.div animate={{ scale: [1, 1.1, 1] }} transition={{ duration: 1.5, repeat: Infinity }} className="text-8xl mb-4">
+                  <motion.div animate={{ scale: [1, 1.1, 1] }} transition={{ duration: 1.5, repeat: Infinity }} className="text-6xl mb-3">
                     {room.winner === "wolves" ? "🐺" : room.winner === "lovers" ? "💕" : "🏰"}
                   </motion.div>
-                  <h2 className="font-cinzel font-black text-3xl md:text-4xl mb-2"
+                  <h2 className="font-cinzel font-black text-2xl mb-1"
                     style={{ color: room.winner === "wolves" ? "#dc2626" : room.winner === "lovers" ? "#ec4899" : "#16a34a" }}>
                     {room.winner === "wolves" ? "Les Loups ont Gagné!" : room.winner === "lovers" ? "Les Amoureux ont Gagné!" : "Le Village a Triomphé!"}
                   </h2>
-                  <p className="text-white/40 font-cinzel text-sm mb-8">Nuit {room.night_number} · Jour {room.day_number}</p>
-                  <div className="space-y-2 text-left max-h-64 overflow-y-auto mb-6">
+                  <p className="text-white/40 font-cinzel text-xs mb-5">Nuit {room.night_number} · Jour {room.day_number}</p>
+                  <div className="space-y-1.5 text-left max-h-48 overflow-y-auto mb-5">
                     {players.map((p) => {
                       const rc = ROLES[p.role as RoleName];
+                      if (!rc) return null;
                       return (
-                        <div key={p.id} className="flex items-center gap-3 p-3 rounded-xl"
-                          style={{ background: p.is_alive ? `${rc?.color}15` : "rgba(255,255,255,0.02)", border: `1px solid ${p.is_alive ? `${rc?.color}25` : "rgba(255,255,255,0.05)"}` }}>
-                          <span className="text-xl">{rc?.emoji}</span>
+                        <div key={p.id} className="flex items-center gap-2 p-2 rounded-lg"
+                          style={{ background: p.is_alive ? `${rc.color}12` : "rgba(255,255,255,0.02)", border: `1px solid ${p.is_alive ? `${rc.color}20` : "rgba(255,255,255,0.04)"}` }}>
+                          <span className="text-base">{rc.emoji}</span>
                           <div className="flex-1 min-w-0">
-                            <p className={cls("font-cinzel font-bold text-sm", p.is_alive ? "text-white" : "text-white/30")}>{p.name}</p>
-                            <p className="text-xs truncate" style={{ color: `${rc?.color}70` }}>{p.role}</p>
+                            <p className={cls("font-cinzel font-bold text-xs", p.is_alive ? "text-white" : "text-white/30")}>{p.name}</p>
+                            <p className="text-[10px] truncate" style={{ color: `${rc.color}60` }}>{p.role}</p>
                           </div>
-                          <span className={cls("text-xs font-cinzel", p.is_alive ? "text-green-400" : "text-white/20")}>
-                            {p.is_alive ? "✓ Vivant" : "✝"}
+                          <span className={cls("text-[10px] font-cinzel shrink-0", p.is_alive ? "text-green-400" : "text-white/20")}>
+                            {p.is_alive ? "✓" : "✝"}
                           </span>
                         </div>
                       );
                     })}
                   </div>
-                  <a href="/" className="inline-block bg-gold text-bg-base font-cinzel font-bold px-10 py-4 rounded-xl hover:bg-gold-light transition-all text-lg tracking-widest">
+                  <a href="/"
+                    className="inline-block font-cinzel font-bold px-8 py-3.5 rounded-xl text-sm tracking-widest uppercase transition-all active:scale-95"
+                    style={{ background: "rgba(201,168,76,0.2)", border: "1px solid rgba(201,168,76,0.5)", color: "#c9a84c" }}>
                     Nouvelle Partie
                   </a>
                 </motion.div>
@@ -666,52 +727,41 @@ export default function RoomPage() {
             </AnimatePresence>
           </div>
 
-          {/* Sidebar */}
-          <div className="space-y-4">
-            <div className="glass rounded-2xl p-4">
-              <h3 className="font-cinzel text-white/50 text-xs uppercase tracking-widest mb-4">
+          {/* ── Sidebar ── */}
+          <div className="space-y-3">
+            <div className="glass rounded-2xl p-3">
+              <h3 className="font-cinzel text-white/40 text-[10px] uppercase tracking-widest mb-3">
                 Joueurs ({alive.length} en vie)
               </h3>
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 {players.map((p) => (
                   <div key={p.id}
-                    className={cls("flex items-center gap-2 px-2 py-1.5 rounded-lg transition-all",
+                    className={cls(
+                      "flex items-center gap-2 px-2 py-1.5 rounded-lg",
                       !p.is_alive ? "opacity-40" : "",
-                      p.user_id === userId ? "bg-gold/5 border border-gold/20" : "")}>
-                    <span className="text-xs">{p.is_alive ? "🟢" : "⚫"}</span>
-                    <span className={cls("font-cinzel text-xs truncate", p.is_alive ? "text-white" : "text-white/30")}>{p.name}</span>
-                    {p.user_id === userId && <span className="ml-auto text-gold/60 text-[10px] font-cinzel">Vous</span>}
-                    {/* Show role on ended screen */}
-                    {room.status === "ended" && p.role && (
-                      <span className="ml-auto text-[10px]" style={{ color: `${ROLES[p.role as RoleName]?.color}80` }}>{ROLES[p.role as RoleName]?.emoji}</span>
+                      p.user_id === userId ? "bg-gold/5 border border-gold/15" : ""
+                    )}>
+                    <span className="text-[10px] shrink-0">{p.is_alive ? "🟢" : "⚫"}</span>
+                    <span className={cls("font-cinzel text-xs truncate flex-1", p.is_alive ? "text-white" : "text-white/30")}>{p.name}</span>
+                    {p.user_id === userId && <span className="text-gold/50 text-[9px] font-cinzel shrink-0">Vous</span>}
+                    {room.status === "ended" && p.role && ROLES[p.role as RoleName] && (
+                      <span className="text-[10px] shrink-0" style={{ color: `${ROLES[p.role as RoleName].color}70` }}>{ROLES[p.role as RoleName].emoji}</span>
                     )}
                   </div>
                 ))}
               </div>
-              {dead.length > 0 && dead.some(p => p.role) && room.status !== "ended" && (
-                <div className="mt-3 pt-3 border-t border-white/5">
-                  <p className="font-cinzel text-white/20 text-[10px] uppercase tracking-widest mb-2">Éliminés</p>
-                  {dead.map((p) => (
-                    <div key={p.id} className="flex items-center gap-2 px-2 py-1 text-white/20">
-                      <span className="text-xs">{ROLES[p.role as RoleName]?.emoji ?? "💀"}</span>
-                      <span className="font-cinzel text-xs">{p.name}</span>
-                      <span className="ml-auto text-[10px]">{p.role}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
 
             {events.length > 0 && (
-              <div className="glass rounded-2xl p-4">
-                <h3 className="font-cinzel text-white/50 text-xs uppercase tracking-widest mb-3">Journal</h3>
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {events.slice(0, 15).map((ev) => {
+              <div className="glass rounded-2xl p-3">
+                <h3 className="font-cinzel text-white/40 text-[10px] uppercase tracking-widest mb-2">Journal</h3>
+                <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                  {events.slice(0, 12).map((ev) => {
                     const payload = ev.payload as { message?: string };
                     return (
-                      <div key={ev.id} className="text-xs text-white/50 flex gap-2 items-start">
-                        <span className="shrink-0">{ev.type === "death" ? "💀" : ev.type === "win" ? "🏆" : ev.type === "phase_change" ? "•" : "›"}</span>
-                        <span>{payload.message ?? ev.type}</span>
+                      <div key={ev.id} className="text-[10px] text-white/50 flex gap-1.5 items-start">
+                        <span className="shrink-0">{ev.type === "death" ? "💀" : ev.type === "win" ? "🏆" : "•"}</span>
+                        <span className="leading-relaxed">{payload.message ?? ev.type}</span>
                       </div>
                     );
                   })}
@@ -721,29 +771,6 @@ export default function RoomPage() {
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-/* ── Cupidon two-pick helper ── */
-function CupidonPicker({ alive, onLink }: { alive: Player[]; onLink: (a: string, b: string) => void }) {
-  const [first, setFirst] = useState<string | null>(null);
-  return (
-    <div className="grid grid-cols-2 gap-3">
-      {alive.map((p) => (
-        <button key={p.id}
-          onClick={() => {
-            if (!first) { setFirst(p.id); return; }
-            if (first === p.id) { setFirst(null); return; }
-            onLink(first, p.id);
-          }}
-          className={cls("glass rounded-xl p-3 text-center transition-all",
-            first === p.id ? "border-pink-500/70 scale-105" : "hover:scale-105 cursor-pointer")}
-          style={first === p.id ? { boxShadow: "0 0 12px rgba(236,72,153,0.3)" } : {}}>
-          <div className="text-2xl mb-1">{first === p.id ? "💗" : "💛"}</div>
-          <p className="font-cinzel text-xs text-white">{p.name}</p>
-        </button>
-      ))}
     </div>
   );
 }
