@@ -1,0 +1,75 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;900&family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { --bg-base: #07070f; --gold: #c9a84c; --gold-light: #e8c96a; }
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { background-color: var(--bg-base); color: #e8e0d0; font-family: 'Inter', sans-serif; overflow-x: hidden; -webkit-font-smoothing: antialiased; }
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #0f0f1a; }
+::-webkit-scrollbar-thumb { background: #2a2a3e; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #c9a84c40; }
+
+.text-gold-shimmer {
+  background: linear-gradient(90deg, #c9a84c 0%, #e8c96a 30%, #fff8e7 50%, #e8c96a 70%, #c9a84c 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: textShimmer 4s linear infinite;
+}
+
+.glass {
+  background: rgba(14, 14, 24, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(201, 168, 76, 0.12);
+}
+
+.glass-dark {
+  background: rgba(7, 7, 15, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.glow-wolves {
+  background: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(220,38,38,0.25) 0%, transparent 70%);
+}
+
+.glow-gold {
+  background: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(201,168,76,0.2) 0%, transparent 70%);
+}
+
+.phase-badge {
+  font-family: 'Cinzel', serif;
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+@keyframes borderGlow {
+  0%, 100% { border-color: rgba(201,168,76,0.3); box-shadow: 0 0 12px rgba(201,168,76,0.1); }
+  50% { border-color: rgba(201,168,76,0.7); box-shadow: 0 0 24px rgba(201,168,76,0.3); }
+}
+.border-glow-animated { animation: borderGlow 3s ease-in-out infinite; }
+
+.night-overlay {
+  background: radial-gradient(ellipse at 50% 0%, rgba(30,20,60,0.95) 0%, rgba(7,7,15,0.98) 100%);
+}
+
+@keyframes wolfPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220,38,38,0.4); }
+  70% { box-shadow: 0 0 0 12px rgba(220,38,38,0); }
+}
+.wolf-pulse { animation: wolfPulse 2s ease-in-out infinite; }
+
+@supports (padding: max(0px)) {
+  .safe-bottom { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+  .safe-top { padding-top: max(1rem, env(safe-area-inset-top)); }
+}
