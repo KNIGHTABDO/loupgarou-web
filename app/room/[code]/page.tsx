@@ -48,7 +48,7 @@ export default function RoomPage() {
     supabase.auth.getSession().then(({ data }: { data: { session: import("@supabase/supabase-js").Session | null } }) => {
       const session = data.session;
       if (session) setUserId(session.user.id);
-      else supabase.auth.signInAnonymously().then(({ data }) => setUserId(data.user?.id ?? null));
+      else supabase.auth.signInAnonymously().then((res: { data: { user: { id: string } | null } }) => setUserId(res.data.user?.id ?? null));
     });
   }, []);
 
