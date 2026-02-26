@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="80" fill="#07070f"/>
+  <!-- Outer gold ring -->
+  <circle cx="256" cy="256" r="220" fill="none" stroke="#c9a84c" stroke-width="8" opacity="0.8"/>
+  <circle cx="256" cy="256" r="208" fill="none" stroke="#c9a84c" stroke-width="2" opacity="0.3"/>
+  <!-- Crescent moon as wolf silhouette -->
+  <circle cx="256" cy="216" r="120" fill="#c9a84c" opacity="0.15"/>
+  <!-- Wolf head silhouette -->
+  <path d="M256 110 L220 180 L180 170 L200 220 L170 260 L210 255 L220 290 L256 270 L292 290 L302 255 L342 260 L312 220 L332 170 L292 180 Z" fill="#c9a84c" opacity="0.9"/>
+  <!-- Ears -->
+  <path d="M220 180 L200 130 L240 165 Z" fill="#c9a84c"/>
+  <path d="M292 180 L312 130 L272 165 Z" fill="#c9a84c"/>
+  <!-- Eyes -->
+  <ellipse cx="235" cy="230" rx="10" ry="8" fill="#dc2626"/>
+  <ellipse cx="277" cy="230" rx="10" ry="8" fill="#dc2626"/>
+  <!-- Snout -->
+  <path d="M240 255 Q256 268 272 255 L264 245 Q256 250 248 245 Z" fill="#8b1a1a"/>
+  <!-- Village silhouette at bottom -->
+  <rect x="80" y="380" width="352" height="60" rx="4" fill="#0f0f1a"/>
+  <path d="M80,380 L80,410 L110,380 L140,410 L170,370 L200,410 L230,380 L260,410 L290,380 L320,410 L350,380 L380,410 L410,380 L432,400 L432,440 L80,440 Z" fill="#14141f"/>
+  <!-- Window lights -->
+  <rect x="155" y="388" width="10" height="12" rx="2" fill="#c9a84c" opacity="0.6"/>
+  <rect x="235" y="385" width="10" height="14" rx="2" fill="#c9a84c" opacity="0.5"/>
+  <rect x="315" y="392" width="10" height="10" rx="2" fill="#c9a84c" opacity="0.4"/>
+  <!-- Gold dots around ring -->
+  <circle cx="256" cy="38" r="5" fill="#c9a84c" opacity="0.7"/>
+  <circle cx="256" cy="474" r="5" fill="#c9a84c" opacity="0.7"/>
+  <circle cx="38" cy="256" r="5" fill="#c9a84c" opacity="0.7"/>
+  <circle cx="474" cy="256" r="5" fill="#c9a84c" opacity="0.7"/>
+  <!-- Corner ornaments -->
+  <path d="M90,38 L60,38 L60,68" fill="none" stroke="#c9a84c" stroke-width="3" opacity="0.4"/>
+  <path d="M422,38 L452,38 L452,68" fill="none" stroke="#c9a84c" stroke-width="3" opacity="0.4"/>
+  <path d="M90,474 L60,474 L60,444" fill="none" stroke="#c9a84c" stroke-width="3" opacity="0.4"/>
+  <path d="M422,474 L452,474 L452,444" fill="none" stroke="#c9a84c" stroke-width="3" opacity="0.4"/>
+</svg>
